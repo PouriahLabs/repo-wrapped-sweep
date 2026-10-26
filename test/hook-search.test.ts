@@ -590,7 +590,11 @@ describe("hook check — searches that would not read a flagged file are allowed
     expect(grepIn().code).toBe(2);
   });
 
-  it("decides within the 50 ms budget, including the git spawn, on a ~2,000-file tree", () => {
+  // 50 ms where git spawns in a few ms; on Windows the spawn alone is 40–120 ms (why
+  // GIT_TIMEOUT_MS is 150 there), so the budget is the git deadline plus the walk.
+  const budgetMs = process.platform === "win32" ? GIT_TIMEOUT_MS + 50 : 50;
+
+  it("decides within budget, including the git spawn, on a ~2,000-file tree", () => {
     repoFixture();
     for (let d = 0; d < 19; d++) bulk(path.join(proj(), `pkg${d}`), 100, "m");
     const stdin = call("Grep", { pattern: "x" }, proj());
@@ -605,7 +609,7 @@ describe("hook check — searches that would not read a flagged file are allowed
       times.push(performance.now() - t0);
     }
     times.sort((a, b) => a - b);
-    expect(times[Math.floor(times.length / 2)]!).toBeLessThan(50);
+    expect(times[Math.floor(times.length / 2)]!).toBeLessThan(budgetMs);
   });
 });
 

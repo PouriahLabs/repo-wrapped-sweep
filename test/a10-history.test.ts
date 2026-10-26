@@ -82,18 +82,29 @@ describe("createHistoryResolver", () => {
   it("resolves a snapshot to the home-relative original path, reading each index once", async () => {
     const readText = vi.fn(async () => index);
     const resolve = createHistoryResolver(env, readText);
-    const dir = "C:\\Users\\me\\AppData\\Roaming\\Code\\User\\History\\-6a9ea81e";
-    expect(await resolve(`${dir}\\9ya8.prod`)).toBe("~/proj/.env.prod");
-    expect(await resolve(`${dir}\\Ab12.prod`)).toBe("~/proj/.env.prod");
-    expect(await resolve(`${dir}\\Cd34.prod`)).toBe("~/proj/.env.prod");
+    // Snapshot paths are real host paths (the resolver reads them from disk), so
+    // build them with the host's separator — only the index's resource is Windows.
+    const dir = path.join(
+      "Users",
+      "me",
+      "AppData",
+      "Roaming",
+      "Code",
+      "User",
+      "History",
+      "-6a9ea81e",
+    );
+    expect(await resolve(path.join(dir, "9ya8.prod"))).toBe("~/proj/.env.prod");
+    expect(await resolve(path.join(dir, "Ab12.prod"))).toBe("~/proj/.env.prod");
+    expect(await resolve(path.join(dir, "Cd34.prod"))).toBe("~/proj/.env.prod");
     expect(readText).toHaveBeenCalledTimes(1);
     expect(readText).toHaveBeenCalledWith(path.join(dir, "entries.json"));
   });
   it("a different directory is a different file", async () => {
     const readText = vi.fn(async () => index);
     const resolve = createHistoryResolver(env, readText);
-    await resolve("C:\\h\\Code\\User\\History\\-a\\1.txt");
-    await resolve("C:\\h\\Code\\User\\History\\-b\\1.txt");
+    await resolve(path.join("h", "Code", "User", "History", "-a", "1.txt"));
+    await resolve(path.join("h", "Code", "User", "History", "-b", "1.txt"));
     expect(readText).toHaveBeenCalledTimes(2);
   });
   it("falls back to null (the opaque path) when there is no usable index", async () => {

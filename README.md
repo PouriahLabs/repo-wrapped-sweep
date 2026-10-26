@@ -326,3 +326,17 @@ pnpm build       # tsup → dist/index.js
 
 The CLI **bundles** the pure scanner modules from the app (`src/lib/native-scan/*`) — it never forks
 them. A test asserts the bundle contains exactly the app's `SECRET_RULES`.
+
+## Source and releases
+
+This public repository, [`PouriahLabs/repo-wrapped-sweep`](https://github.com/PouriahLabs/repo-wrapped-sweep),
+is a **mirror**: the CLI is developed inside the Repo Wrapped monorepo, where it shares its rules with the
+web app's scanners. Each release rebuilds this repo from there (the shared modules live under
+`vendor/src/lib`). Issues are welcome here; code changes are ported upstream.
+
+Releases are published to npm by `.github/workflows/publish.yml` on a `v*` tag, using npm trusted
+publishing — no long-lived npm token exists — with provenance you can check:
+
+```sh
+npm audit signatures            # in a project that depends on repo-wrapped-sweep
+```
