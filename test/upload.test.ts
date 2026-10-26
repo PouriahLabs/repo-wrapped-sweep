@@ -328,6 +328,8 @@ async function run(args: string[], srv: ReturnType<typeof server>) {
   const io = captureIO();
   io.fetch = srv.fetch;
   io.sleep = NO_WAIT;
+  // An upload now collects Machine Insights; keep the toolchain probes off the host's PATH.
+  fx.env.processEnv ??= { PATH: "" };
   const code = await main(args, io, fx.env);
   return { code, out: io.out(), err: io.err() };
 }

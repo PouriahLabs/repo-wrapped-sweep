@@ -2,7 +2,9 @@
 
 Sweep a machine for plaintext secrets — private keys, `.env` backups, cookie jars, editor history,
 coding-agent transcripts — group copies of the same secret into one finding, and see which are
-expected stores and which are leaks.
+expected stores and which are leaks. The same walk also reports the work that exists only on your
+machine, the disk you can reclaim, your toolchain drift and your AI usage
+([machine insights](#machine-insights)).
 
 **Local-first.** Every command here works with no account. The raw secret never leaves the process:
 not to disk (the baseline holds fingerprints and paths only), not to the network, not to stdout (a
@@ -49,6 +51,7 @@ repo-wrapped-sweep [scan] [options]
   --concurrency <n>   Parallel readers (default 8)
   --progress          Print a running file count to stderr
   --quiet             No table (exit code only)
+  --no-insights       No machine-insights summary after the table, and no insights block in an upload
 ```
 
 **Exit codes:** `0` clean · `1` findings at/above `--fail-on` (or any NEW finding with
@@ -185,6 +188,91 @@ first. 5-second timeout, one attempt, nothing logged; AWS keys and private keys 
 tool does that sends a secret anywhere.** It is interactive only: `--validate` is refused with
 `--scheduled`, and neither the daily schedule nor an MDM-driven run ever validates.
 
+## Machine insights
+
+The same walk that finds secrets also answers the questions you ask when a laptop dies, a disk fills
+or a repo won't build. **Every command here is local and read-only** — no account, no network (no
+`git fetch` unless you pass `--fetch`) — except `disk clean`, which is the only command in the tool
+that changes your machine, and `wrapped --share`, which is the only one that publishes anything.
+
+```bash
+repo-wrapped-sweep insights            # git + disk + toolchain + backup in one pass
+repo-wrapped-sweep git [--fetch] [--all]
+repo-wrapped-sweep disk
+repo-wrapped-sweep disk clean [--yes] [--older-than 30d] [--include-venv] [--include-npm-cache] [--dry-run]
+repo-wrapped-sweep toolchain [--all]
+repo-wrapped-sweep backup [--all]
+repo-wrapped-sweep ai [--since 30d|YYYY-MM-DD] [--by repo|day|model] [--json]
+repo-wrapped-sweep wrapped [--year 2026] [--out card.html] [--png] [--share]
+```
+
+The first five take `--root`, `--exclude`, `--include-cloud`, `--concurrency`, `--json` and
+`--html <file>`; a full interactive sweep prints a three-line summary of them after the findings table
+(`--no-insights` hides it).
+
+| Command     | What it tells you                                                                                                                                                                                                                                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `git`       | Clones with work that exists **only on this machine**: commits on no remote, no remote at all, uncommitted changes, stashes older than 30 days, a branch far behind. "Behind" is as of the last fetch — labelled so; `--fetch` fetches first. Worst first.                                                            |
+| `disk`      | Regenerable build output and caches by size — `node_modules`, `.next`/`.turbo`/`.nuxt`/`.svelte-kit`, Rust `target`, Python caches, Gradle `build`, package-manager caches — and how much sits in projects untouched for 30+ days. Docker is reported, never cleaned. `dist/` and `out/` are reported, never cleaned. |
+| `toolchain` | Installed runtimes and CLIs (local `--version` probes, 2 s each) against what each repo pins (`.nvmrc`, `engines`, `packageManager`, `.python-version`, `.tool-versions`, `rust-toolchain`, `go.mod`, `global.json`). `node 20.11 installed, .nvmrc wants 22 → run "fnm use"`.                                        |
+| `backup`    | Project folders that are neither in a synced folder (OneDrive, iCloud, Dropbox) nor pushed: `synced`, `pushed`, `partly-pushed`, `local-only`.                                                                                                                                                                        |
+| `ai`        | Claude Code and Codex sessions, tokens, models and **API-equivalent cost** per repo, day or model.                                                                                                                                                                                                                    |
+| `wrapped`   | The year on this machine as a self-contained dark-first HTML card (commits, languages, AI sessions and share, busiest day and hour, streak). `--png` also screenshots it with a Chrome/Edge already installed.                                                                                                        |
+
+### `disk clean`
+
+Deletes the regenerable folders `disk` listed. Every rule is tested:
+
+- **Dry run by default.** It prints exactly what would go and the total; `--yes` acts. At a terminal
+  without `--yes` it asks per project; with no terminal (CI, a pipe, `--json`) it is a dry run.
+- Only the classes `disk` lists, only **next to the file that rebuilds them** (a lockfile beside
+  `node_modules`, `Cargo.toml` beside `target`, …), only in projects untouched for `--older-than`
+  (default 30 days). Never `dist/`, `out/`, `.venv` (unless `--include-venv`), Docker, or anything
+  outside your home.
+- Never follows a symlink or junction, refuses a target whose real path leaves its project, refuses
+  a folder git tracks or sees changes in, and re-proves each target from a fresh listing just before
+  deleting it.
+- Package caches use the tool's own prune (`pnpm store prune`, `yarn cache clean`, `pip cache purge`;
+  `npm cache clean --force` only with `--include-npm-cache`) — never `rm`.
+- Deletion is **permanent** (not to the Trash — moving gigabytes of `node_modules` to the bin reclaims
+  nothing until it is emptied), and every action is appended to `~/.repo-wrapped/clean-log.jsonl`
+  (`path`, `bytes`, `time`).
+- It refuses `--scheduled`: the daily schedule and an MDM-driven run can never delete anything.
+
+### AI usage
+
+`ai` reads token counts, model ids, timestamps and the working directory of each session from
+`~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl` (plus archived and `.zst`-compressed
+Codex rollouts on Node 22.15+) — **never message text, prompts or code**; a test plants a sentinel in
+every text field and greps the output. Lines over 64 KB are skipped (about 0.3 % of tokens). It is
+incremental (`~/.repo-wrapped/ai-cursor.json`), de-duplicates repeated and resumed-session lines, and
+attributes each session to the nearest repo from its working directory.
+
+**Cost is "API-equivalent":** what the same tokens would cost on the pay-as-you-go API, from a pinned
+price table whose date (`pricesAsOf`) every report shows. It is **not** a bill — Pro, Max and Team
+subscribers are not charged it. A model with no known price is listed as unpriced, its tokens counted
+and its cost left out.
+
+### Share your Machine Wrapped (optional, Pro)
+
+```bash
+repo-wrapped-sweep wrapped --year 2026 --share
+```
+
+`--share` publishes **that year's aggregate card** as a section of your public Contributor Wrapped at
+`repowrapped.com/dev/<your-login>`. It is opt-in per year — nothing is shared unless you run it, one
+year per run, and running it again replaces that year. What goes up: commit and repo **counts**,
+language **shares**, session / active-hour / token totals, API-equivalent cost, the top model's id,
+busiest weekday and hour, streak. What never does: repo names, folder names, paths, your email, commit
+hashes or messages, prompts. (It holds no names at all, so `--share-paths` changes nothing here.) The
+server rejects a body with any field the card has no place for.
+
+It needs an enrolled **personal** device on a Pro account — a machine that reports to an organization
+cannot publish to a personal profile — and a terminal: it is refused from a schedule, and where your
+administrator set `insights: false`. If you have not generated your Contributor Wrapped yet the card
+is stored and appears once you do. **Unpublish** any time from Workspace → Endpoints → Machine, or by
+deleting your account.
+
 ## Optional account: enrol and upload
 
 Everything above works with no account. To see findings across your laptops (or your organization's)
@@ -202,13 +290,23 @@ rejects it too. **Paths are not uploaded** unless the enrolment says so — `enr
 personal device, or the admin's choice on an org token — and then only home-relative (`~/…`), never
 your username. The enrol command prints the setting so you always know.
 
+**Machine insights ride the same upload** (schema v2): an `insights` block with OS version, CPU and
+disk totals, counts of repos by git state, reclaimable gigabytes by class, tool versions and
+version-pin mismatches, backup counts and per-day AI usage since the last accepted upload. Counts,
+sizes, versions, timestamps, model ids and token totals — **no file, prompt, code or message
+content.** A repo travels as a salted id (`HMAC(salt, normalized remote URL)`, so two clones of one
+repo match, and the server cannot reverse it); its readable name only with `--share-paths`, which the
+server enforces too. `--no-insights` — or `"insights": false` in the MDM config — sends the unchanged
+v1 body instead, and a server that predates v2 still accepts it.
+
 Enrolling swaps the local fingerprint salt for the organization's (or your account's) so the same key
 on five machines groups into one finding; your local baseline is reset because its fingerprints no
 longer apply. `~/.repo-wrapped/device.json` (owner-only) holds the device token and salt.
 
 **MDM / fleet rollout.** Drop `{ "enrolToken": "rwo_…", "upload": true, "schedule": true }` at
 `/Library/Application Support/RepoWrapped/sweep.json` (macOS) or `%ProgramData%\RepoWrapped\sweep.json`
-(Windows); the CLI enrols itself on first run and installs the daily schedule.
+(Windows); the CLI enrols itself on first run and installs the daily schedule. Add
+`"insights": false` to keep the machine-insights block (and `wrapped --share`) off that fleet.
 
 ## Daily schedule
 
@@ -220,7 +318,10 @@ repo-wrapped-sweep schedule uninstall
 
 A macOS LaunchAgent (`com.repowrapped.sweep`), a Windows scheduled task (`RepoWrappedSweep`) or a
 systemd **user** timer, running `--quiet --scheduled [--upload]` at a stable per-machine time between
-09:00 and 15:00. **macOS:** a LaunchAgent cannot read `~/Documents`, `~/Desktop` or `~/Downloads`
+09:00 and 15:00. With `--upload` the scheduled run sends the machine-insights block with the findings
+(unless `--no-insights` or MDM `insights: false`); without it nothing leaves the machine. A scheduled
+run can **never** `disk clean`, `--validate` or `wrapped --share` — each refuses `--scheduled`.
+**macOS:** a LaunchAgent cannot read `~/Documents`, `~/Desktop` or `~/Downloads`
 without Full Disk Access — the installer probes for it and, if blocked, prints the exact System
 Settings path and the binary to add.
 

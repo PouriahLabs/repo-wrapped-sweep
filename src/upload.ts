@@ -6,6 +6,8 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { isMaskedPreview } from "@/lib/native-scan/secret-rules";
+import { INSIGHTS_SCHEMA_VERSION, type InsightsBlock } from "@/lib/endpoint/insights/wire";
+import type { WrappedShareBody } from "@/lib/endpoint/insights/wrapped-wire";
 import { type DeviceConfig } from "./device";
 import type { ScanResult } from "./scan";
 
@@ -25,8 +27,17 @@ export interface IngestFinding {
   paths?: string[];
 }
 
+/** Server ceiling on the request body (MAX_INGEST_BODY_BYTES in ingest-schema.ts). */
+export const MAX_UPLOAD_BODY_BYTES = 1_500_000;
+
+/**
+ * v1 = findings only (what a `--no-insights` / MDM `insights: false` run still sends, so it
+ * also works against a server that predates v2); v2 = findings + the Machine Insights block.
+ */
 export interface IngestBody {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
+  /** v2 only. */
+  insights?: InsightsBlock;
   runId: string;
   startedAt: string;
   finishedAt: string;
@@ -45,6 +56,8 @@ export interface BuildOptions {
   runId?: string;
   /** Interactive `--validate` results by fingerprint (A5). */
   validity?: ReadonlyMap<string, "live" | "revoked" | "unknown">;
+  /** Machine Insights block → a v2 body. Omitted → a v1 body, exactly as before. */
+  insights?: InsightsBlock;
 }
 
 function uploadOs(platform: NodeJS.Platform): IngestBody["os"] {
@@ -84,7 +97,8 @@ export function buildIngestBody(result: ScanResult, opts: BuildOptions): IngestB
     return f;
   });
   return {
-    schemaVersion: 1,
+    schemaVersion: opts.insights ? INSIGHTS_SCHEMA_VERSION : 1,
+    ...(opts.insights ? { insights: opts.insights } : {}),
     runId: opts.runId ?? randomUUID(),
     startedAt: result.startedAt,
     finishedAt: result.finishedAt,
@@ -267,4 +281,28 @@ export async function enrolDevice(
       enrolledAt: (opts.now ?? (() => new Date()))().toISOString(),
     },
   };
+}
+
+/**
+ * Publish a Machine Wrapped card (`wrapped --share`, Pro): POST the aggregate share body with the
+ * device token. Safe to retry — the server replaces the year's card. The body is built by the
+ * pure allow-list `buildShareBody` (`@/lib/endpoint/insights/wrapped-wire`).
+ */
+export function shareWrapped(
+  device: Pick<DeviceConfig, "apiBase" | "deviceToken">,
+  body: WrappedShareBody,
+  version: string,
+  deps: { fetch?: FetchLike; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<HttpOutcome> {
+  return postJson(
+    deps.fetch ?? (globalThis.fetch as unknown as FetchLike),
+    `${device.apiBase}/api/endpoint/wrapped-share`,
+    {
+      authorization: `Bearer ${device.deviceToken}`,
+      "user-agent": `repo-wrapped-sweep/${version}`,
+    },
+    body,
+    2,
+    deps.sleep ?? sleep,
+  );
 }

@@ -37,7 +37,13 @@ import { displayPath, type SweepEnv } from "./env";
 import { highRiskTargets, isConfigLikeFile, isNoiseFile, underFixtureDir } from "./locations";
 import { createPowerShellProvider, type PlaceholderProvider } from "./placeholders";
 import { createHistoryResolver, type HistoryResolver } from "./vscode-history";
-import { redirectedKnownFolders, walk, type WalkFile, type WalkStats } from "./walk";
+import {
+  redirectedKnownFolders,
+  walk,
+  type WalkFile,
+  type WalkObserver,
+  type WalkStats,
+} from "./walk";
 
 // --- caps (§ A2.1) ----------------------------------------------------------
 
@@ -79,6 +85,11 @@ export interface ScanOptions {
    */
   placeholders?: PlaceholderProvider | null;
   onProgress?: (files: number) => void;
+  /**
+   * Machine Insights listener riding the same walk (repo roots, project folders,
+   * regenerable folders). Passive: the findings are identical with or without it.
+   */
+  observer?: WalkObserver;
 }
 
 export interface ScanStats {
@@ -498,6 +509,7 @@ export async function scan(opts: ScanOptions): Promise<ScanResult> {
       noDefaultExcludes: opts.noDefaultExcludes,
       placeholders,
       cloudAllowRoots: redirected.map((r) => r.path),
+      observer: opts.observer,
       onFile: async (f) => {
         // Failures propagate to the walker, which counts them (permission skips and
         // errors separately) and never lets one file stop the sweep.

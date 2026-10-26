@@ -87,6 +87,8 @@ export interface MdmConfig {
   upload?: boolean;
   /** Personal-device path sharing request (an org token's own setting wins). */
   sharePaths?: boolean;
+  /** `false` turns off the Machine Insights block in uploads (ENDPOINT-MACHINE-INSIGHTS § C3). */
+  insights?: boolean;
 }
 
 /** Read the machine-wide MDM config. Malformed or missing → null. */
@@ -106,6 +108,7 @@ export function loadMdmConfig(env: Pick<SweepEnv, "mdmConfigPath">): MdmConfig |
     if (typeof j.schedule === "boolean") out.schedule = j.schedule;
     if (typeof j.upload === "boolean") out.upload = j.upload;
     if (typeof j.sharePaths === "boolean") out.sharePaths = j.sharePaths;
+    if (typeof j.insights === "boolean") out.insights = j.insights;
     return out;
   } catch {
     return null;

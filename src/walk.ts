@@ -21,6 +21,23 @@ export interface WalkFile {
   locationClass: LocationClass;
 }
 
+/** One entry of a listed directory, as the walker saw it (symlinks are never reported). */
+export interface WalkDirEntry {
+  name: string;
+  isDir: boolean;
+}
+
+/**
+ * A passive listener on the walk (Machine Insights, ENDPOINT-MACHINE-INSIGHTS § C2): it
+ * sees every directory the walk LISTS, with the entries that survived the user excludes
+ * and the cloud-placeholder check — but BEFORE the default excludes, so a `.git`,
+ * `node_modules` or `.next` the walk skips is still visible as a sibling. It cannot
+ * change what is walked or scanned; an observer that throws is ignored.
+ */
+export interface WalkObserver {
+  onDirectory(dir: string, entries: readonly WalkDirEntry[]): void;
+}
+
 export interface WalkOptions {
   roots: string[];
   env: SweepEnv;
@@ -53,6 +70,10 @@ export interface WalkOptions {
    */
   cloudAllowRoots?: string[];
   onFile: (file: WalkFile) => Promise<void>;
+  /** Told about every listed directory (see `WalkObserver`). */
+  observer?: WalkObserver;
+  /** List directories only — never hand files to `onFile` (the insights-only walk). */
+  dirsOnly?: boolean;
 }
 
 export interface WalkStats {
@@ -187,6 +208,7 @@ export async function walk(opts: WalkOptions): Promise<WalkStats> {
         if (isPermissionError(err)) deny(task.root, task.dir);
         return;
       }
+      const listed: WalkDirEntry[] | null = opts.observer ? [] : null;
       try {
         for await (const entry of dir) {
           const abs = path.join(task.dir, entry.name);
@@ -216,6 +238,7 @@ export async function walk(opts: WalkOptions): Promise<WalkStats> {
               continue;
             }
           }
+          listed?.push({ name: entry.name, isDir });
           if (isDir) {
             if (isDefaultExcludedDir(entry.name, normPath(abs, env.platform))) continue;
             if (!opts.noDefaultExcludes && isInstalledSoftwareDir(abs, env)) continue;
@@ -226,10 +249,17 @@ export async function walk(opts: WalkOptions): Promise<WalkStats> {
               }
             }
             stack.push({ kind: "dir", dir: abs, root: task.root });
-          } else if (isFile) {
+          } else if (isFile && !opts.dirsOnly) {
             stack.push({ kind: "file", file: abs, root: task.root });
           }
           pump();
+        }
+        if (listed) {
+          try {
+            opts.observer!.onDirectory(task.dir, listed);
+          } catch {
+            // a listener never disturbs the walk
+          }
         }
       } catch (err) {
         if (isPermissionError(err)) deny(task.root, task.dir);

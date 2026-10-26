@@ -26,6 +26,9 @@ export interface SweepEnv {
   /** Does `abs` name an existing file? Defaults to a real stat; tests that simulate
    *  another platform's paths override it. */
   fileExists?: (abs: string) => boolean;
+  /** The process environment the toolchain probes see (PATH, PATHEXT, version-manager
+   *  variables). Defaults to `process.env`; tests point PATH at stub binaries. */
+  processEnv?: NodeJS.ProcessEnv;
 }
 
 export function currentEnv(processEnv: NodeJS.ProcessEnv = process.env): SweepEnv {

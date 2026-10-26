@@ -7,6 +7,17 @@
 // CLI knows it is unattended, so it can refuse `--validate` there (decision E3:
 // a background job must never send found secrets to their providers).
 //
+// What a scheduled run does with Machine Insights (ENDPOINT-MACHINE-INSIGHTS § C3, C6):
+//   - it is a plain full sweep, so with `--upload` (or MDM `upload: true`) the same walk also
+//     collects the insights block — git, disk, toolchain, backup, AI usage — and sends it with
+//     the findings (schema v2), unless MDM `insights: false` or `--no-insights` turns it off
+//     (then it sends the unchanged v1 body);
+//   - without `--upload` nothing leaves the machine and nothing is printed (`--quiet`);
+//   - it can NEVER delete (`disk clean` is a different command that refuses `--scheduled`),
+//     never `--validate` (sends keys to providers), and never `wrapped --share` (publishing to a
+//     public page is a choice made at a terminal, each time). These are enforced in cli.ts and
+//     pinned by tests; the arguments below are the whole surface a scheduler can reach.
+//
 // Start time: a stable per-machine offset inside 12:00 ± 3 h. Jitter alone does
 // not protect Neon — uploads are buffered server-side regardless — it just keeps a
 // fleet from stampeding the ingest endpoint at the same minute.
