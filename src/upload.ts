@@ -246,6 +246,8 @@ export async function enrolDevice(
     {
       token,
       label: opts.label ?? os.hostname().slice(0, 80),
+      // Lets the server keep the name typed into "Add device" over the hostname.
+      ...(opts.label !== undefined ? { labelExplicit: true } : {}),
       os: uploadOs(opts.platform),
       cliVersion: opts.cliVersion,
       ...(opts.sharePaths !== undefined ? { sharePaths: opts.sharePaths } : {}),

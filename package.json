@@ -1,6 +1,6 @@
 {
   "name": "repo-wrapped-sweep",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Sweep a machine for plaintext secrets: private keys, env backups, cookie jars, editor history and agent transcripts. Local-first; the raw secret never leaves the process.",
   "keywords": [
     "secrets",
