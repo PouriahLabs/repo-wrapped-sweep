@@ -1,0 +1,39 @@
+name: CI
+
+# Mirrored from Repo Wrapped's monorepo by cli/sweep/scripts/export-public.mjs.
+# Edit it there, not here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      - run: pnpm build
+
+      - name: Smoke-test the built CLI
+        run: |
+          node dist/index.js --version
+          node dist/index.js --help > /dev/null

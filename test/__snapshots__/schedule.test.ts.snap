@@ -1,0 +1,78 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Linux systemd user timer > renders the service and timer (snapshot) 1`] = `
+{
+  "service": "[Unit]
+Description=Repo Wrapped endpoint sweep
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/repo-wrapped-sweep --quiet --scheduled
+Nice=10
+IOSchedulingClass=idle
+",
+  "timer": "[Unit]
+Description=Daily Repo Wrapped endpoint sweep
+
+[Timer]
+OnCalendar=*-*-* 10:07:00
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+",
+}
+`;
+
+exports[`Windows schtasks > renders the create argv (snapshot), quoting a path with spaces 1`] = `
+[
+  "/Create",
+  "/SC",
+  "DAILY",
+  "/TN",
+  "RepoWrappedSweep",
+  "/TR",
+  ""C:\\Program Files\\nodejs\\node.exe" C:\\Users\\me\\sweep\\dist\\index.js --quiet --scheduled --upload",
+  "/ST",
+  "10:07",
+  "/F",
+]
+`;
+
+exports[`macOS LaunchAgent plist > renders the agent (snapshot) 1`] = `
+"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.repowrapped.sweep</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/opt/sweep/dist/index.js</string>
+    <string>--quiet</string>
+    <string>--scheduled</string>
+    <string>--upload</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>7</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/me/.repo-wrapped/sweep.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/me/.repo-wrapped/sweep.log</string>
+</dict>
+</plist>
+"
+`;

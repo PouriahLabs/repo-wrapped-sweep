@@ -1,0 +1,49 @@
+{
+  "name": "repo-wrapped-sweep",
+  "version": "0.1.1",
+  "description": "Sweep a machine for plaintext secrets: private keys, env backups, cookie jars, editor history and agent transcripts. Local-first; the raw secret never leaves the process.",
+  "keywords": [
+    "secrets",
+    "security",
+    "scanner",
+    "endpoint",
+    "claude-code"
+  ],
+  "license": "MIT",
+  "homepage": "https://repowrapped.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PouriahLabs/repo-wrapped-sweep.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PouriahLabs/repo-wrapped-sweep/issues"
+  },
+  "type": "module",
+  "bin": {
+    "repo-wrapped-sweep": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "tsup",
+    "export:public": "node scripts/export-public.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "tsup": "8.3.5",
+    "typescript": "5.4.5",
+    "vitest": "3.2.7"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

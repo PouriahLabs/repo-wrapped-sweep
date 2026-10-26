@@ -1,0 +1,112 @@
+name: Publish
+
+# Mirrored from Repo Wrapped's monorepo by cli/sweep/scripts/export-public.mjs.
+# Edit it there, not here.
+#
+# Runs ONLY when a `v*` tag is pushed (e.g. `git tag v0.1.1 && git push origin v0.1.1`).
+# There is no workflow_dispatch trigger. The tag must match package.json's version.
+#
+# What a release produces:
+#   - the `repo-wrapped-sweep` npm package, published WITH PROVENANCE (an attestation
+#     linking the tarball to this workflow run and commit)
+#   - single-file binaries for machines without Node (bun --compile), attached to the
+#     GitHub release alongside SHA256SUMS
+#
+# Auth: npm Trusted Publishing (OIDC) — no NPM_TOKEN secret exists or is needed. npm trusts
+# THIS workflow for the package, configured once with:
+#   npm trust github repo-wrapped-sweep --file publish.yml --repo PouriahLabs/repo-wrapped-sweep
+# Provenance requires this repository to be public. Trusted publishing needs npm >= 11.5.1
+# and `id-token: write`; the release needs `contents: write`.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing (OIDC) landed in npm 11.5.1; Node 22 ships npm 10.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@^11.5.1
+
+      - name: Check the tag matches package.json
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG does not match package.json version $PKG"
+            exit 1
+          fi
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
+          # A pre-release version (1.2.3-rc.1) goes to the `next` dist-tag and is marked as such.
+          case "$PKG" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      - run: pnpm build
+
+      - name: Smoke-test the built CLI
+        run: |
+          node dist/index.js --version
+          node dist/index.js --help > /dev/null
+
+      - name: Publish to npm (trusted publishing, with provenance)
+        run: |
+          if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then
+            npm publish --provenance --access public --tag next
+          else
+            npm publish --provenance --access public
+          fi
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Compile single-file binaries
+        run: |
+          mkdir -p release
+          bun build --compile --target=bun-darwin-arm64 ./dist/index.js --outfile release/repo-wrapped-sweep-darwin-arm64
+          bun build --compile --target=bun-darwin-x64 ./dist/index.js --outfile release/repo-wrapped-sweep-darwin-x64
+          bun build --compile --target=bun-windows-x64 ./dist/index.js --outfile release/repo-wrapped-sweep-win-x64.exe
+          bun build --compile --target=bun-linux-x64 ./dist/index.js --outfile release/repo-wrapped-sweep-linux-x64
+
+      - name: Checksums
+        working-directory: release
+        run: sha256sum repo-wrapped-sweep-* > SHA256SUMS
+
+      - name: Attach to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FLAGS=""
+          if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then FLAGS="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --title "repo-wrapped-sweep ${{ steps.version.outputs.version }}" \
+            --generate-notes $FLAGS
