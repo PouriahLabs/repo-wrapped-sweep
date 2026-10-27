@@ -38,8 +38,10 @@ import {
   MAX_REPO_NAMES,
   MAX_VERSION_LENGTH,
   type AiDayRow,
+  type AiToolsInsights,
   type InsightsBlock,
   type MachineInfo,
+  type PostureInsights,
   type RepoRef,
 } from "@/lib/endpoint/insights/wire";
 import { displayPath, expandPath, type SweepEnv } from "../env";
@@ -50,6 +52,13 @@ import type { DiskCollection } from "./disk";
 import { GIT_COMMAND_TIMEOUT_MS, GIT_POOL, git, type GitCollection } from "./git";
 import { collectInsights } from "./index";
 import { collectAiUsage, repoResolver } from "./ai-usage";
+import {
+  collectActivity,
+  collectAiTools,
+  collectMachineExtras,
+  collectPosture,
+  type ActivityCollection,
+} from "./machine-extras";
 import { mapPool } from "./run";
 import { collectToolchain, type ToolchainCollection } from "./toolchain";
 
@@ -262,7 +271,29 @@ export interface BlockInput {
   backup?: BackupCollection;
   /** Folded AI rows whose `repo` is an ABSOLUTE repo root (or null). */
   ai?: { rows: readonly UsageRow[]; pricesAsOf: string };
+  posture?: PostureInsights;
+  aiTools?: AiToolsInsights;
+  /** Commit-rhythm fold whose `topRepo.repo` is an ABSOLUTE repo root. */
+  activity?: ActivityCollection;
   ref: (abs: string) => RepoRef;
+}
+
+/** Biggest and longest-untouched project from the backup sizing (null-safe). PURE. */
+export function projectExtremes(backup: BackupCollection | undefined): {
+  biggest: { path: string; bytes: number } | null;
+  oldest: { path: string; lastTouched: number } | null;
+} {
+  let biggest: { path: string; bytes: number } | null = null;
+  let oldest: { path: string; lastTouched: number } | null = null;
+  for (const p of backup?.projects ?? []) {
+    if (p.bytes !== null && p.bytes > 0 && (!biggest || p.bytes > biggest.bytes)) {
+      biggest = { path: p.path, bytes: p.bytes };
+    }
+    if (p.lastTouched !== null && (!oldest || p.lastTouched < oldest.lastTouched)) {
+      oldest = { path: p.path, lastTouched: p.lastTouched };
+    }
+  }
+  return { biggest, oldest };
 }
 
 const clip = (s: string, n: number) => s.slice(0, n);
@@ -365,6 +396,26 @@ export function buildInsightsBlock(input: BlockInput): InsightsBlock {
       ...(top.length > 0 ? { top } : {}),
     };
   }
+
+  if (input.posture) out.posture = input.posture;
+  if (input.aiTools) out.aiTools = input.aiTools;
+  if (input.activity) {
+    const f = input.activity.fold;
+    const { biggest, oldest } = projectExtremes(input.backup);
+    out.activity = {
+      commits7d: f.commits7d,
+      commits365d: f.commits365d,
+      activeDays365d: f.activeDays365d,
+      longestStreakDays: f.longestStreakDays,
+      byHour: f.byHour,
+      byWeekday: f.byWeekday,
+      topRepo: f.topRepo ? { repo: ref(f.topRepo.repo), commits: f.topRepo.commits } : null,
+      biggestProject: biggest ? { repo: ref(biggest.path), bytes: biggest.bytes } : null,
+      oldestProject: oldest
+        ? { repo: ref(oldest.path), lastTouched: new Date(oldest.lastTouched).toISOString() }
+        : null,
+    };
+  }
   return out;
 }
 
@@ -377,6 +428,8 @@ export function referencedFolders(
   for (const r of input.toolchain?.repos ?? []) if (r.drift.length > 0) out.add(r.path);
   for (const r of input.ai?.rows ?? []) if (r.repo !== null) out.add(r.repo);
   for (const p of input.backup?.projects ?? []) out.add(p.path);
+  const top = input.activity?.fold.topRepo;
+  if (top) out.add(top.repo);
   return [...out].sort();
 }
 
@@ -439,7 +492,21 @@ export async function collectUploadInsights(opts: UploadInsightsOptions): Promis
     ai = undefined; // the AI section is optional; the rest still goes
   }
 
-  const parts = { ...local, ai };
+  // CLI 0.3 sections. Each is optional and independent: one failing never drops the others.
+  const [extras, posture, aiTools, activity] = await Promise.all([
+    collectMachineExtras(env).catch(() => ({})),
+    collectPosture(env, now).catch(() => undefined),
+    collectAiTools(env).catch(() => undefined),
+    found ? collectActivity(env, found.repos(), now).catch(() => null) : Promise.resolve(null),
+  ]);
+
+  const parts = {
+    ...local,
+    ai,
+    ...(posture ? { posture } : {}),
+    ...(aiTools ? { aiTools } : {}),
+    ...(activity ? { activity } : {}),
+  };
   const folders = referencedFolders(parts);
   const repoRoots = found
     ? folders.filter((f) => found.repoRoots.has(f) || (ai?.rows.some((r) => r.repo === f) ?? false))
@@ -460,7 +527,7 @@ export async function collectUploadInsights(opts: UploadInsightsOptions): Promis
   };
   const insights = buildInsightsBlock({
     collectedAt: new Date(now).toISOString(),
-    machine: machineInfo(env, opts.machine),
+    machine: { ...machineInfo(env, opts.machine), ...extras },
     ...parts,
     ref: (abs) => makeRepoRef(abs, ctx),
   });

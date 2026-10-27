@@ -219,6 +219,26 @@ The first five take `--root`, `--exclude`, `--include-cloud`, `--concurrency`, `
 | `ai`        | Claude Code and Codex sessions, tokens, models and **API-equivalent cost** per repo, day or model.                                                                                                                                                                                                                    |
 | `wrapped`   | The year on this machine as a self-contained dark-first HTML card (commits, languages, AI sessions and share, busiest day and hour, streak). `--png` also screenshots it with a Chrome/Edge already installed.                                                                                                        |
 
+### What an upload adds (0.3+)
+
+An enrolled device's daily `--upload` also sends four small, metadata-only blocks for the web
+Machine tab. Each is read locally with no admin rights and no network, and each failing on its own
+never stops the run:
+
+- **Device basics** — OS name and version, CPU model, uptime, login shell (plus the cores, memory
+  and disk it already sent).
+- **Security posture** — disk encryption (FileVault / BitLocker / LUKS) and firewall **on/off**, days
+  since the last OS update, how git stores credentials (`keychain`, `plaintext` for
+  `credential.helper=store`, …), whether commits are signed, and an SSH key **summary** — count by
+  type, how many are weak (DSA, RSA < 2048) or have no passphrase, the oldest key's age. Keys are
+  read only for their unencrypted header; no key, path or comment is sent.
+- **AI tooling** — AI CLIs on `PATH`, well-known AI editor extensions, MCP servers per app (and how
+  many have a credential pasted into the config instead of a reference), and whether Claude Code /
+  Codex are set to run without asking.
+- **Coding rhythm** (full sweeps only) — commit counts by hour and weekday, streak and active days for
+  your global `git user.email` across local repos. The email is only a local `git log --author`
+  filter; only counts leave the machine.
+
 ### `disk clean`
 
 Deletes the regenerable folders `disk` listed. Every rule is tested:

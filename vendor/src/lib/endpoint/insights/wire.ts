@@ -51,7 +51,102 @@ export interface MachineInfo {
   /** The volume holding the home directory. 0 when it could not be read. */
   diskTotalGb: number;
   diskFreeGb: number;
+  // ---- CLI 0.3+ (all optional: an older CLI omits them) ----
+  /** Marketing name + version: `macOS 15.1`, `Windows 11 Pro 24H2`, `Ubuntu 24.04.1 LTS`. */
+  osName?: string;
+  /** `os.cpus()[0].model`, e.g. `Apple M3 Pro`. */
+  cpuModel?: string;
+  /** Hours since boot. */
+  uptimeHours?: number;
+  /** Login shell basename: `zsh`, `bash`, `pwsh`, `cmd`. */
+  shell?: string;
 }
+
+/** Tri-state for a setting the CLI could not always read (no admin rights, unsupported OS). */
+export type OnOff = "on" | "off" | "unknown";
+
+export const CREDENTIAL_HELPER_KINDS = [
+  "keychain",
+  "plaintext",
+  "memory",
+  "none",
+  "other",
+] as const;
+/** How `git` stores HTTPS credentials: an OS keychain, a plaintext file (`store`), in memory
+ *  for a while (`cache`), nothing configured, or a helper we don't classify. */
+export type CredentialHelperKind = (typeof CREDENTIAL_HELPER_KINDS)[number];
+
+export const SSH_KEY_TYPES = ["ed25519", "ecdsa", "rsa", "dsa", "other"] as const;
+export type SshKeyType = (typeof SSH_KEY_TYPES)[number];
+
+export interface SshKeySummary {
+  count: number;
+  byType: Partial<Record<SshKeyType, number>>;
+  /** RSA under 2048 bits, or any DSA key. */
+  weak: number;
+  /** Private keys with no passphrase. */
+  unencrypted: number;
+  /** Age of the oldest private key file, days; null with no keys. */
+  oldestDays: number | null;
+}
+
+/** Security posture (CLI 0.3+). Read-only local checks — no admin rights, no network. */
+export interface PostureInsights {
+  diskEncryption: OnOff;
+  firewall: OnOff;
+  /** Days since the last installed OS update; null when it could not be read. */
+  osUpdateAgeDays: number | null;
+  gitCredentialHelper: CredentialHelperKind | null;
+  /** `commit.gpgsign` on in the global git config; null when git is absent. */
+  commitSigning: boolean | null;
+  sshKeys: SshKeySummary;
+}
+
+export const AI_CLIENTS = ["claude-code", "claude-desktop", "cursor", "vscode", "codex"] as const;
+export type AiClient = (typeof AI_CLIENTS)[number];
+
+export interface McpClientSummary {
+  client: AiClient;
+  /** MCP servers configured (user-level plus per-project). */
+  servers: number;
+  /** Servers whose config holds a literal credential-looking value instead of a reference. */
+  inlineSecrets: number;
+}
+
+export const AGENT_AUTONOMY = ["default", "auto-edit", "broad-shell", "full-auto"] as const;
+/** How much an AI agent may do without asking: `full-auto` skips every prompt
+ *  (bypassPermissions / approval `never`), `broad-shell` pre-approves any shell command. */
+export type AgentAutonomy = (typeof AGENT_AUTONOMY)[number];
+
+/** AI tooling on the machine (CLI 0.3+). Names are well-known public tool/extension ids only. */
+export interface AiToolsInsights {
+  /** AI CLIs found on PATH, e.g. `claude`, `codex`, `gemini`, `aider`. */
+  clis: string[];
+  /** Known AI editor extensions, as `editor:extension-id`. */
+  extensions: string[];
+  mcp: McpClientSummary[];
+  autonomy: Array<{ client: AiClient; level: AgentAutonomy }>;
+}
+
+/** Local coding rhythm (CLI 0.3+): commits by this machine's git identity. The identity
+ *  itself never leaves the machine — only counts. */
+export interface ActivityInsights {
+  commits7d: number;
+  commits365d: number;
+  activeDays365d: number;
+  longestStreakDays: number;
+  /** 24 counts, local hour of day. */
+  byHour: number[];
+  /** 7 counts, local weekday, Sunday first. */
+  byWeekday: number[];
+  /** The repo with the most commits in the last year. */
+  topRepo: { repo: RepoRef; commits: number } | null;
+  biggestProject: { repo: RepoRef; bytes: number } | null;
+  /** The project left untouched the longest. */
+  oldestProject: { repo: RepoRef; lastTouched: string } | null;
+}
+
+export const MAX_AI_TOOL_ITEMS = 32;
 
 export interface GitTopRow {
   repo: RepoRef;
@@ -138,6 +233,9 @@ export interface InsightsBlock {
   toolchain?: ToolchainInsights;
   ai?: AiInsights;
   backup?: BackupInsights;
+  posture?: PostureInsights;
+  aiTools?: AiToolsInsights;
+  activity?: ActivityInsights;
   /**
    * Only with `shareRepoNames`: id → name for every repo the CLI knows, so names also reach
    * rows uploaded before sharing was turned on (repo ids never change).

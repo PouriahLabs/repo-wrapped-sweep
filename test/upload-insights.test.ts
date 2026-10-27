@@ -424,10 +424,27 @@ describe("--upload sends schema v2 with insights", () => {
     const body = srv.seen[0]!;
     expect(body.schemaVersion).toBe(2);
     const ins = body.insights as Record<string, any>;
-    expect(Object.keys(ins).sort()).toEqual(
-      ["ai", "backup", "collectedAt", "disk", "git", "machine", "toolchain"].sort(),
-    );
+    const keys = Object.keys(ins);
+    for (const k of [
+      "ai",
+      "aiTools",
+      "backup",
+      "collectedAt",
+      "disk",
+      "git",
+      "machine",
+      "posture",
+      "toolchain",
+    ]) {
+      expect(keys).toContain(k);
+    }
+    // `activity` rides along only when the machine has a global git identity.
+    expect(keys.filter((k) => k !== "activity")).toHaveLength(9);
     expect(ins.machine.cpuCount).toBeGreaterThan(0);
+    expect(typeof ins.machine.uptimeHours).toBe("number");
+    // The fake home has no ~/.ssh: zero keys, and the posture block is classifications only.
+    expect(ins.posture.sshKeys.count).toBe(0);
+    expect(["on", "off", "unknown"]).toContain(ins.posture.diskEncryption);
     // The repo's id is the ORG salt over its normalized REMOTE — what another laptop's
     // clone (anywhere on disk, ssh or https) produces too.
     const expected = repoRefId(ORG_SALT, {
