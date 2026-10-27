@@ -17,6 +17,7 @@ export interface EnrolFlags {
   api?: string;
   label?: string;
   sharePaths?: boolean;
+  shareRepoNames?: boolean;
 }
 
 /** Print why an enrol/upload call failed, with the upgrade link on a 402. */
@@ -46,6 +47,7 @@ export async function enrol(
       platform: env.platform,
       label: flags.label,
       sharePaths: flags.sharePaths,
+      shareRepoNames: flags.shareRepoNames,
     },
     { fetch: io.fetch, sleep: io.sleep },
   );
@@ -71,7 +73,7 @@ export async function runEnrol(
 ): Promise<number> {
   if (!token) {
     io.stderr.write(
-      "usage: repo-wrapped-sweep enrol <token> [--label <name>] [--share-paths] [--api <url>]\n",
+      "usage: repo-wrapped-sweep enrol <token> [--label <name>] [--share-repo-names] [--share-paths] [--api <url>]\n",
     );
     return 2;
   }
@@ -87,6 +89,11 @@ export async function runEnrol(
     device.sharePaths
       ? "Paths: home-relative paths (~/…) are shared with uploads — never your username, never the secret.\n"
       : "Paths: NOT shared. Uploads carry fingerprints, masked previews and location counts only.\n",
+  );
+  io.stdout.write(
+    device.shareRepoNames
+      ? "Repo names: shared (owner/repo, never paths). Turn off in the Devices table on the site.\n"
+      : "Repo names: NOT shared — repos are salted ids. Turn on in the Devices table, or enrol with --share-repo-names.\n",
   );
   io.stdout.write("Run `repo-wrapped-sweep --upload` to sweep and upload.\n");
   return 0;

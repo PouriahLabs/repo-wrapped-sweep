@@ -13,7 +13,7 @@ import {
   saveBaseline,
   updateBaseline,
 } from "./baseline";
-import { loadDevice, loadMdmConfig, resolveApiBase, resolveSalt } from "./device";
+import { loadDevice, loadMdmConfig, resolveApiBase, resolveSalt, saveDevice } from "./device";
 import { currentEnv, displayPath, expandPath, type SweepEnv } from "./env";
 import { enrol, reportFailure, runEnrol } from "./enrol-cmd";
 import { runFix } from "./fix";
@@ -95,6 +95,7 @@ import { loadConfig } from "./state";
 import {
   MAX_UPLOAD_BODY_BYTES,
   buildIngestBody,
+  fetchDeviceSettings,
   shareWrapped,
   uploadRun,
   type FetchLike,
@@ -211,8 +212,10 @@ Machine insights (local only — nothing is uploaded, no network; only disk clea
                       has turned insights off
 
 Enrol this machine (optional — every command works without an account)
-  repo-wrapped-sweep enrol <token> [--label <name>] [--share-paths] [--api <url>]
+  repo-wrapped-sweep enrol <token> [--label <name>] [--share-repo-names] [--share-paths] [--api <url>]
                       Token from Workspace → Endpoints (rwd_…) or an org admin (rwo_…).
+                      --share-repo-names lets uploads name repos (owner/repo, never paths)
+                      instead of salted ids; also a toggle in the site's Devices table.
                       --share-paths also uploads home-relative paths (off by default;
                       for an org token the admin's setting applies).
 
@@ -283,6 +286,7 @@ export async function main(
         "dry-run": { type: "boolean" },
         daily: { type: "boolean" },
         "share-paths": { type: "boolean" },
+        "share-repo-names": { type: "boolean" },
         label: { type: "string" },
         api: { type: "string" },
         help: { type: "boolean", short: "h" },
@@ -317,7 +321,12 @@ export async function main(
   if (command === "enrol") {
     return runEnrol(
       positionals[1],
-      { api: values.api, label: values.label, sharePaths: values["share-paths"] },
+      {
+        api: values.api,
+        label: values.label,
+        sharePaths: values["share-paths"],
+        shareRepoNames: values["share-repo-names"],
+      },
       io,
       env,
       VERSION,
@@ -448,7 +457,7 @@ async function runScan({ values, env, io, failOn, concurrency }: ScanArgs): Prom
   if (!device && mdm?.enrolToken) {
     device = await enrol(
       mdm.enrolToken,
-      { api: values.api, sharePaths: mdm.sharePaths },
+      { api: values.api, sharePaths: mdm.sharePaths, shareRepoNames: mdm.shareRepoNames },
       { stdout: io.stdout, stderr: io.stderr, fetch: io.fetch, sleep: io.sleep },
       env,
       VERSION,
@@ -1014,6 +1023,25 @@ async function uploadResult(
       "not uploaded: this machine is not enrolled. Run `repo-wrapped-sweep enrol <token>`.\n",
     );
     return;
+  }
+  // The site's Devices table can change what this device shares; pick that up now (the
+  // server enforces it either way). On failure, device.json's last known values stand.
+  const settings = await fetchDeviceSettings(
+    { ...device, apiBase: resolveApiBase({ flag: values.api, device }) },
+    VERSION,
+    { fetch: io.fetch },
+  );
+  if (
+    settings &&
+    (settings.sharePaths !== device.sharePaths ||
+      settings.shareRepoNames !== (device.shareRepoNames === true))
+  ) {
+    device = { ...device, ...settings };
+    try {
+      saveDevice(insightsOpts.env, device);
+    } catch {
+      // best-effort; the server's answer is used for this upload regardless
+    }
   }
   // Machine Insights (v2). Best-effort: a collector failure sends the findings without it.
   let collected: Awaited<ReturnType<typeof collectUploadInsights>> | undefined;

@@ -28,10 +28,16 @@ export const MAX_VERSION_LENGTH = 64;
 /** 16 hex chars — `repoRefId` (`repo-ref.ts`). */
 export const REPO_REF_ID_RE = /^[0-9a-f]{16}$/;
 
-/** Salted hash always; the readable name only when the device shares paths. */
+/** Most entries in the `repoNames` directory. */
+export const MAX_REPO_NAMES = 1000;
+
+/**
+ * Salted hash always; a readable name only on opt-in: `owner/repo` (or the folder name) with
+ * `shareRepoNames`, else the home-relative path with `sharePaths`.
+ */
 export interface RepoRef {
   id: string;
-  /** Home-relative path (`~/code/app`) — only with `sharePaths`. */
+  /** `owner/repo` with `shareRepoNames`; `~/code/app` with `sharePaths`. */
   name?: string;
 }
 
@@ -132,4 +138,9 @@ export interface InsightsBlock {
   toolchain?: ToolchainInsights;
   ai?: AiInsights;
   backup?: BackupInsights;
+  /**
+   * Only with `shareRepoNames`: id → name for every repo the CLI knows, so names also reach
+   * rows uploaded before sharing was turned on (repo ids never change).
+   */
+  repoNames?: RepoRef[];
 }

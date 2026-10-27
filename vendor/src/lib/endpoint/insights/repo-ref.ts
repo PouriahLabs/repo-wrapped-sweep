@@ -71,6 +71,36 @@ export function normalizeHomePath(p: string): string {
     .replace(/^\/+|\/+$/g, "");
 }
 
+/**
+ * The readable name sent with `shareRepoNames`: `owner/repo` from the remote (the host is
+ * dropped; a nested group keeps its path), or the folder's own name for a repo with no remote.
+ * Never a full path, so it carries no username. Null when nothing usable is left.
+ */
+export function repoDisplayName(identity: RepoIdentity): string | null {
+  const remote = identity.remoteUrl ? normalizeRemoteUrl(identity.remoteUrl) : null;
+  const name = remote
+    ? remote.slice(remote.indexOf("/") + 1)
+    : (normalizeHomePath(identity.homeRelativePath).split("/").pop() ?? "");
+  return isRepoDisplayName(name) ? name : null;
+}
+
+/** Max length of a `shareRepoNames` name. */
+export const MAX_REPO_DISPLAY_NAME_LENGTH = 200;
+
+/**
+ * A repo name, not a path: up to four `/`-separated segments of letters, digits, `.`, `_`,
+ * `-` and spaces, none of them `.`/`..`, no leading `~` or `/`. The server applies the same
+ * test, so a path can't be smuggled in as a "name".
+ */
+export function isRepoDisplayName(name: string): boolean {
+  if (!name || name.length > MAX_REPO_DISPLAY_NAME_LENGTH) return false;
+  const parts = name.split("/");
+  return (
+    parts.length <= 4 &&
+    parts.every((p) => /^[A-Za-z0-9._ -]+$/.test(p) && p !== "." && p !== ".." && p.trim() === p)
+  );
+}
+
 export interface RepoIdentity {
   /** The `origin` (or first) remote URL as printed by git; null when there is none. */
   remoteUrl: string | null;

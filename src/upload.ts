@@ -202,6 +202,38 @@ async function postJson(
   return last;
 }
 
+/**
+ * The device's current sharing settings from the server (`GET /api/endpoint/settings`), so a
+ * toggle flipped on the site applies to this very upload. Null on any failure — the caller
+ * keeps what `device.json` says. One attempt, short timeout: it must never hold up an upload.
+ */
+export async function fetchDeviceSettings(
+  device: Pick<DeviceConfig, "apiBase" | "deviceToken">,
+  version: string,
+  deps: { fetch?: FetchLike } = {},
+): Promise<{ sharePaths: boolean; shareRepoNames: boolean } | null> {
+  try {
+    // A GET carries no body, which `FetchLike` (built for POSTs) always has.
+    const get = (deps.fetch ?? globalThis.fetch) as unknown as (
+      url: string,
+      init: { method: "GET"; headers: Record<string, string>; signal?: AbortSignal },
+    ) => ReturnType<FetchLike>;
+    const res = await get(`${device.apiBase}/api/endpoint/settings`, {
+      method: "GET",
+      headers: {
+        authorization: `Bearer ${device.deviceToken}`,
+        "user-agent": `repo-wrapped-sweep/${version}`,
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const o = interpretResponse(res.status, await readJson(res));
+    if (!o.ok || !o.data || typeof o.data.sharePaths !== "boolean") return null;
+    return { sharePaths: o.data.sharePaths, shareRepoNames: o.data.shareRepoNames === true };
+  } catch {
+    return null;
+  }
+}
+
 /** Upload one run. Safe to retry: the server dedupes on `runId`. */
 export function uploadRun(
   device: Pick<DeviceConfig, "apiBase" | "deviceToken">,
@@ -235,6 +267,7 @@ export async function enrolDevice(
     platform: NodeJS.Platform;
     label?: string;
     sharePaths?: boolean;
+    shareRepoNames?: boolean;
     now?: () => Date;
   },
   deps: { fetch?: FetchLike; sleep?: (ms: number) => Promise<void> } = {},
@@ -251,6 +284,7 @@ export async function enrolDevice(
       os: uploadOs(opts.platform),
       cliVersion: opts.cliVersion,
       ...(opts.sharePaths !== undefined ? { sharePaths: opts.sharePaths } : {}),
+      ...(opts.shareRepoNames ? { shareRepoNames: true } : {}),
     },
     2,
     deps.sleep ?? sleep,
@@ -280,6 +314,7 @@ export async function enrolDevice(
       saltHex: d.saltHex,
       orgLogin: typeof d.orgLogin === "string" ? d.orgLogin : null,
       sharePaths: d.sharePaths === true,
+      shareRepoNames: d.shareRepoNames === true,
       enrolledAt: (opts.now ?? (() => new Date()))().toISOString(),
     },
   };

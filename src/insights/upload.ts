@@ -27,7 +27,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { foldUsage, type UsageRow } from "@/lib/endpoint/insights/ai-usage";
-import { repoRefId } from "@/lib/endpoint/insights/repo-ref";
+import { repoDisplayName, repoRefId } from "@/lib/endpoint/insights/repo-ref";
 import {
   MAX_AI_ROWS,
   MAX_BACKUP_TOP,
@@ -35,6 +35,7 @@ import {
   MAX_GIT_TOP,
   MAX_MODEL_LENGTH,
   MAX_REPO_NAME_LENGTH,
+  MAX_REPO_NAMES,
   MAX_VERSION_LENGTH,
   type AiDayRow,
   type InsightsBlock,
@@ -145,6 +146,8 @@ export interface RefContext {
   /** The device's scope salt (org salt for an org device). */
   salt: Uint8Array;
   sharePaths: boolean;
+  /** Name repos `owner/repo` (or the folder name) — wins over `sharePaths`' path. */
+  shareRepoNames?: boolean;
   /** Remote URL per absolute repo root (missing / null = no usable remote → path identity). */
   remotes: ReadonlyMap<string, string | null>;
 }
@@ -153,7 +156,12 @@ export interface RefContext {
 export function makeRepoRef(abs: string, ctx: RefContext): RepoRef {
   const shown = displayPath(abs, ctx.env);
   const homeRelativePath = shown.startsWith("~/") ? shown.slice(2) : shown;
-  const id = repoRefId(ctx.salt, { remoteUrl: ctx.remotes.get(abs) ?? null, homeRelativePath });
+  const identity = { remoteUrl: ctx.remotes.get(abs) ?? null, homeRelativePath };
+  const id = repoRefId(ctx.salt, identity);
+  if (ctx.shareRepoNames) {
+    const name = repoDisplayName(identity);
+    if (name) return { id, name };
+  }
   return ctx.sharePaths && shown.startsWith("~/") && shown.length <= MAX_REPO_NAME_LENGTH
     ? { id, name: shown }
     : { id };
@@ -380,7 +388,7 @@ export interface UploadInsightsOptions {
   env: SweepEnv;
   /** The sweep's passive walk observer — present for a full-scope sweep. */
   found?: Discovery;
-  device: { deviceId: string; saltHex: string; sharePaths: boolean };
+  device: { deviceId: string; saltHex: string; sharePaths: boolean; shareRepoNames?: boolean };
   now?: number;
   sizeBudgetMs?: number;
   machine?: MachineProbe;
@@ -436,11 +444,18 @@ export async function collectUploadInsights(opts: UploadInsightsOptions): Promis
   const repoRoots = found
     ? folders.filter((f) => found.repoRoots.has(f) || (ai?.rows.some((r) => r.repo === f) ?? false))
     : folders;
-  const remotes = await collectRemotes(repoRoots, env);
+  const shareRepoNames = opts.device.shareRepoNames === true;
+  // With repo names on, every repo the sweep saw goes into the name directory, so AI days
+  // uploaded before sharing was turned on can be named too (ids never change).
+  const directory = shareRepoNames
+    ? [...new Set([...repoRoots, ...(found ? found.repoRoots : [])])].slice(0, MAX_REPO_NAMES)
+    : [];
+  const remotes = await collectRemotes(shareRepoNames ? directory : repoRoots, env);
   const ctx: RefContext = {
     env,
     salt: Buffer.from(opts.device.saltHex, "hex"),
     sharePaths: opts.device.sharePaths,
+    shareRepoNames,
     remotes,
   };
   const insights = buildInsightsBlock({
@@ -449,5 +464,9 @@ export async function collectUploadInsights(opts: UploadInsightsOptions): Promis
     ...parts,
     ref: (abs) => makeRepoRef(abs, ctx),
   });
+  if (shareRepoNames) {
+    const named = directory.map((abs) => makeRepoRef(abs, ctx)).filter((r) => r.name);
+    if (named.length > 0) insights.repoNames = named;
+  }
   return { insights, nextAiCursor };
 }

@@ -76,6 +76,19 @@ describe("RepoRef ids — the org-salt fold", () => {
     expect(a).toEqual({ id: a.id }); // no name without sharePaths
   });
 
+  it("shareRepoNames names a repo owner/repo (wins over a path), with the same id", () => {
+    const ctx = {
+      env: env("/home/ana"),
+      salt: ORG_SALT,
+      sharePaths: true,
+      remotes: new Map([["/home/ana/code/app", "git@github.com:Acme/App.git"]]),
+    };
+    const plain = makeRepoRef("/home/ana/code/app", ctx);
+    const named = makeRepoRef("/home/ana/code/app", { ...ctx, shareRepoNames: true });
+    expect(plain.name).toBe("~/code/app");
+    expect(named).toEqual({ id: plain.id, name: "acme/app" });
+  });
+
   it("a different (personal) salt gives a different id for the same repo", () => {
     const remotes = new Map([["/h/code/app", "https://github.com/acme/app"]]);
     const org = makeRepoRef("/h/code/app", {

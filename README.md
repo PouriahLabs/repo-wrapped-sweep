@@ -280,6 +280,7 @@ in Repo Wrapped:
 
 ```bash
 repo-wrapped-sweep enrol <token>     # Workspace → Endpoints → Add device (rwd_…) or an org admin's rwo_…
+repo-wrapped-sweep enrol <token> --share-repo-names   # optional: show repo names, not ids
 repo-wrapped-sweep --upload
 ```
 
@@ -295,8 +296,13 @@ disk totals, counts of repos by git state, reclaimable gigabytes by class, tool 
 version-pin mismatches, backup counts and per-day AI usage since the last accepted upload. Counts,
 sizes, versions, timestamps, model ids and token totals — **no file, prompt, code or message
 content.** A repo travels as a salted id (`HMAC(salt, normalized remote URL)`, so two clones of one
-repo match, and the server cannot reverse it); its readable name only with `--share-paths`, which the
-server enforces too. `--no-insights` — or `"insights": false` in the MDM config — sends the unchanged
+repo match, and the server cannot reverse it). A readable name travels only on opt-in, enforced by
+the server too: **repo names** (`owner/repo` from the remote, or the folder's own name — never a
+path) with `enrol --share-repo-names` or the device's **Repo names** toggle in the site's Devices
+table (the CLI reads that setting before each upload), or the home-relative path with
+`--share-paths`. With repo names on, uploads also carry a small id → name directory of every repo
+the sweep saw, so AI usage uploaded before you turned it on gets names too; turning it off clears
+the stored names. `--no-insights` — or `"insights": false` in the MDM config — sends the unchanged
 v1 body instead, and a server that predates v2 still accepts it.
 
 Enrolling swaps the local fingerprint salt for the organization's (or your account's) so the same key
